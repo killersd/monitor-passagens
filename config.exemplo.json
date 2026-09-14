@@ -1,0 +1,14 @@
+{
+  "origem": "AJU",
+  "destino": "GRU",
+  "data_ida": "2027-04-24",
+  "data_volta": "2027-04-26",
+  "adultos": 1,
+  "classe": "economica",
+  "moeda": "BRL",
+  "preco_maximo": 1000,
+  "intervalo_minutos": 60,
+  "reenviar_apos_horas": 12,
+  "telegram_bot_token": "",
+  "telegram_chat_id": ""
+}
