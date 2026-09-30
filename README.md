@@ -1,8 +1,9 @@
-# Monitor de passagens AJU -> GRU
+# Monitor de passagens
 
-Monitora o preco da passagem de Aracaju (AJU) para Guarulhos (GRU), ida e volta,
-1 adulto, ida em 24/04/2027 e volta em 26/04/2027, e avisa no Telegram quando
-aparecer alguma opcao abaixo de R$ 1.000.
+Monitora passagens entre quaisquer aeroportos atendidos pelo Google Flights. A
+origem, o destino, as datas, os passageiros, a classe, a moeda e os limites de
+monitoramento sao definidos em `config.json`; o projeto nao fica preso a uma
+rota especifica.
 
 Le os precos do Google Flights e usa apenas a biblioteca padrao do Python 3.10+.
 Nao precisa instalar nada.
@@ -17,30 +18,47 @@ Nao precisa instalar nada.
    `https://api.telegram.org/bot<SEU_TOKEN>/getUpdates` e procure por
    `"chat":{"id":123456789`.
 
-## 2. Configurar
+## 2. Configurar a viagem
 
-Edite `config.json`:
+Copie `config.exemplo.json` para `config.json` e edite os valores para a viagem
+que deseja acompanhar. Use os codigos IATA dos aeroportos, como `GRU`, `AJU` ou
+`LIS`, e datas no formato `AAAA-MM-DD`.
 
 ```json
 {
-  "origem": "AJU",
-  "destino": "GRU",
+  "origem": "GRU",
+  "destino": "LIS",
   "data_ida": "2027-04-24",
   "data_volta": "2027-04-26",
   "adultos": 1,
   "classe": "economica",
+  "moeda": "BRL",
   "preco_maximo": 1200,
   "intervalo_minutos": 60,
   "reenviar_apos_horas": 12,
-  //"telegram_bot_token": "8844378729:AAGjwT-ySsOv3x7igC6HgRrS-HIg0A89h8o",
-  //"telegram_chat_id": "507436072"
-  "telegram_bot_token": "8861952248:AAGZ1NbuqJrly_NZZGn3eRTsNxLJT-gv60Y",
-  "telegram_chat_id": "8861952248"
+  "telegram_bot_token": "",
+  "telegram_chat_id": ""
 }
 ```
 
-Se preferir nao guardar o token no arquivo, use as variaveis de ambiente
-`TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, que tem prioridade sobre o `config.json`.
+Todos os campos de viagem e monitoramento ficam no JSON:
+
+| Campo | Descricao |
+| --- | --- |
+| `origem`, `destino` | Codigos IATA dos aeroportos de partida e chegada |
+| `data_ida`, `data_volta` | Datas no formato `AAAA-MM-DD`; deixe `data_volta` como `""` para pesquisar so ida |
+| `adultos` | Quantidade de passageiros adultos |
+| `classe` | `economica`, `premium`, `executiva` ou `primeira` |
+| `moeda` | Moeda dos precos, por exemplo `BRL`, `USD` ou `EUR` |
+| `preco_maximo` | Limite que dispara o alerta |
+| `intervalo_minutos` | Intervalo entre consultas no modo continuo |
+| `reenviar_apos_horas` | Tempo para reenviar um alerta sem nova queda de preco |
+| `telegram_bot_token`, `telegram_chat_id` | Credenciais e destinatario das notificacoes |
+
+Os valores acima sao apenas um exemplo: altere origem, destino e os demais
+campos no `config.json` para cada monitoramento. Mantenha o token do bot em
+segredo. Se preferir nao guarda-lo no arquivo, use as variaveis de ambiente
+`TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, que tem prioridade sobre o JSON.
 
 Confirme o envio:
 
@@ -85,7 +103,7 @@ Rodar a cada hora sem manter o terminal aberto:
 ```
 
 Isso cria a tarefa `MonitorPassagensAJU-GRU` no Agendador de Tarefas, executando
-`--once` de hora em hora. Para remover:
+`--once` de hora em hora e usando os parametros definidos em `config.json`. Para remover:
 
 ```powershell
 Unregister-ScheduledTask -TaskName "MonitorPassagensAJU-GRU" -Confirm:$false
@@ -102,9 +120,9 @@ Unregister-ScheduledTask -TaskName "MonitorPassagensAJU-GRU" -Confirm:$false
 - Depois vem as tres melhores opcoes de **ida** e as tres de **volta**, cada uma
   com companhia, horarios, duracao, paradas, o preco do trecho avulso e o total
   de ida e volta com aquele voo.
-- Cada verificacao faz quatro consultas: a lista de ida e a lista de volta da
-  pesquisa de ida e volta, que dao o total da viagem, e uma pesquisa de so ida
-  para cada trecho, que da o preco separado de cada um.
+- Em viagens de ida e volta, cada verificacao faz quatro consultas: a lista de
+  ida e a lista de volta da pesquisa de ida e volta, que dao o total da viagem,
+  e uma pesquisa de so ida para cada trecho, que da o preco separado de cada um.
 - Nao repete o mesmo aviso a cada consulta: so reenvia se o preco cair mais ainda
   ou depois de `reenviar_apos_horas` horas.
 - O historico fica em `estado.json` (`menor_preco_ida`, `menor_preco_volta`,
