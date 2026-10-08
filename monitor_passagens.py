@@ -4,9 +4,9 @@
 Padrao: Aracaju (AJU) -> Guarulhos (GRU), ida e volta, 1 adulto,
 ida 24/04/2027, volta 26/04/2027, alerta abaixo de R$ 1000.
 
-Cada verificacao faz quatro consultas: a lista de ida e a lista de volta da
-pesquisa de ida e volta (que traz o preco total) e uma pesquisa de so ida para
-cada trecho (que traz o preco separado de cada um).
+Cada verificacao faz tres consultas: a pesquisa de ida e volta (que traz o
+preco total da viagem) e uma pesquisa de so ida para cada trecho (que traz o
+preco separado de cada um).
 
 Usa somente a biblioteca padrao do Python.
 """
@@ -88,15 +88,13 @@ def _leg(date: str, origin: str, destination: str) -> bytes:
 
 SEAT_CLASSES = {"economica": 1, "premium": 2, "executiva": 3, "primeira": 4}
 
-# Os quatro tipos de consulta de um ciclo.
+# Os tipos de consulta de um ciclo.
 IDA_TOTAL = "ida_total"
-VOLTA_TOTAL = "volta_total"
 IDA_AVULSA = "ida_avulsa"
 VOLTA_AVULSA = "volta_avulsa"
 
 ROTULOS = {
     IDA_TOTAL: "ida (total ida e volta)",
-    VOLTA_TOTAL: "volta (total ida e volta)",
     IDA_AVULSA: "ida (so ida)",
     VOLTA_AVULSA: "volta (so ida)",
 }
@@ -113,12 +111,12 @@ def build_tfs(legs: list[bytes], adults: int, seat: int, round_trip: bool) -> st
 
 
 def build_url(cfg: dict, modo: str = IDA_TOTAL) -> str:
-    """Monta a URL do Google Flights para um dos quatro tipos de consulta.
+    """Monta a URL do Google Flights para um dos tipos de consulta.
 
-    Nas consultas de ida e volta o preco exibido e sempre o total da viagem; para
-    ver as opcoes do trecho de volta basta enviar os trechos na ordem inversa. O
-    preco de cada trecho isolado sai das consultas de so ida, porque o Google nao
-    aceita indicar por URL que a ida ja foi escolhida.
+    Na consulta de ida e volta o preco exibido e o total da viagem. O preco de cada
+    trecho isolado sai das consultas de so ida, porque o Google nao aceita indicar
+    por URL que a ida ja foi escolhida. Inverter os trechos numa ida e volta nao
+    serve: vira outra viagem (saindo do destino, com datas fora de ordem).
     """
     seat = SEAT_CLASSES.get(str(cfg.get("classe", "economica")).lower(), 1)
     ida = _leg(cfg["data_ida"], cfg["origem"], cfg["destino"])
@@ -129,8 +127,6 @@ def build_url(cfg: dict, modo: str = IDA_TOTAL) -> str:
         legs, round_trip = [ida], False
     elif modo == VOLTA_AVULSA:
         legs, round_trip = [volta], False
-    elif modo == VOLTA_TOTAL and tem_volta:
-        legs, round_trip = [volta, ida], True
     else:
         legs = [ida, volta] if tem_volta else [ida]
         round_trip = tem_volta
@@ -190,9 +186,13 @@ class Voo:
     paradas: str
     preco_trecho: int | None = None   # preco deste trecho comprado como so ida
     preco_total: int | None = None    # menor total de ida e volta com este voo
+    aeroporto_partida: str = "?"      # codigo IATA, ex.: AJU
+    aeroporto_chegada: str = "?"      # codigo IATA, ex.: GRU, CGH ou VCP
 
     def chave(self) -> str:
-        return "{}|{}|{}".format(self.partida, self.chegada, self.paradas)
+        return "{}|{}|{}|{}|{}".format(
+            self.partida, self.aeroporto_partida, self.chegada, self.aeroporto_chegada, self.paradas
+        )
 
     def preco_ordenacao(self) -> int:
         for valor in (self.preco_total, self.preco_trecho):
@@ -201,8 +201,10 @@ class Voo:
         return 10**9
 
     def resumo(self) -> str:
-        return "{} -> {} | {} | {} | {} | trecho {} | total {}".format(
+        return "{} {} -> {} {} | {} | {} | {} | trecho {} | total {}".format(
+            self.aeroporto_partida,
             self.partida,
+            self.aeroporto_chegada,
             self.chegada,
             self.companhia,
             self.duracao,
@@ -213,7 +215,14 @@ class Voo:
 
     def identificacao(self) -> str:
         """Companhia e horarios, para acompanhar o preco no resumo."""
-        return "{} {} -> {} ({})".format(self.companhia, self.partida, self.chegada, self.paradas)
+        return "{} {} {} -> {} {} ({})".format(
+            self.companhia,
+            self.aeroporto_partida,
+            self.partida,
+            self.aeroporto_chegada,
+            self.chegada,
+            self.paradas,
+        )
 
 
 @dataclass
@@ -261,6 +270,10 @@ _PRICE = re.compile(r"R\$[\s ]*([\d\.]+)")
 _TIME = re.compile(r"^\d{1,2}:\d{2}$")
 _DURATION = re.compile(r"\d+\s*h(?:\s*\d+\s*min)?|\d+\s*min")
 _STOPS = re.compile(r"Sem escalas|\d+\s+parada(?:s)?(?: em [^|]+?)?(?= \|)")
+# resumo compacto do voo na pagina: "02:45 | AJU | 05:30 | VCP" (ou "02:05 | +1 | VCP")
+_AEROPORTOS = re.compile(
+    r"(\d{1,2}:\d{2}) \| ([A-Z]{3}) \| (\d{1,2}:\d{2})(?: \| \+\d)? \| ([A-Z]{3})(?![A-Z])"
+)
 _IGNORAR = re.compile(r"^(Partida|Chegada|Selecionar|Operado|Evita|Voo|R\$|\+|\d)", re.IGNORECASE)
 
 
@@ -297,6 +310,7 @@ def parse_voos(page: str, campo_preco: str) -> list[Voo]:
             continue
 
         stops_match = _STOPS.search(joined)
+        aeroportos_match = _AEROPORTOS.search(joined)
         dur_match = _DURATION.search(joined)
 
         companhia = "?"
@@ -315,6 +329,9 @@ def parse_voos(page: str, campo_preco: str) -> list[Voo]:
             duracao=dur_match.group(0) if dur_match else "?",
             paradas=stops_match.group(0) if stops_match else "?",
         )
+        if aeroportos_match:
+            voo.aeroporto_partida = aeroportos_match.group(2)
+            voo.aeroporto_chegada = aeroportos_match.group(4)
         setattr(voo, campo_preco, preco)
         voos.append(voo)
 
@@ -446,7 +463,7 @@ def monta_mensagem(cfg: dict, res: Resultado, limite: int, quantos: int = 3) -> 
         linhas += [
             "",
             "<i>trecho = preco do voo comprado como so ida. total = menor preco de "
-            "ida e volta combinando esse voo com o outro trecho.</i>",
+            "ida e volta (comprando junto) saindo nesse voo de ida.</i>",
         ]
 
     url = html_mod.escape(build_url(cfg, IDA_TOTAL), quote=True)
@@ -518,32 +535,32 @@ def deve_notificar(estado: dict, preco: int, reenviar_apos_horas: float) -> bool
 # ------------------------------------------------------------------ ciclo main
 
 
-def consulta(cfg: dict, modo: str) -> list[Voo]:
-    campo = "preco_total" if modo in (IDA_TOTAL, VOLTA_TOTAL) else "preco_trecho"
+def consulta(cfg: dict, modo: str, tentativas: int = 2) -> list[Voo]:
+    campo = "preco_total" if modo == IDA_TOTAL else "preco_trecho"
     url = build_url(cfg, modo)
     log.debug("URL (%s): %s", ROTULOS[modo], url)
-    page = fetch(url)
-    voos = parse_voos(page, campo)
-    if not voos:
+    for tentativa in range(1, tentativas + 1):
+        page = fetch(url)
+        voos = parse_voos(page, campo)
+        if voos:
+            log.debug("%s: %d itinerarios", ROTULOS[modo], len(voos))
+            return voos
         log.warning(
-            "Nenhum preco extraido em %s (pagina com %d caracteres). "
+            "Nenhum preco extraido em %s (pagina com %d caracteres, tentativa %d/%d). "
             "O Google pode ter mudado o layout ou bloqueado a consulta.",
             ROTULOS[modo],
             len(page),
+            tentativa,
+            tentativas,
         )
-    else:
-        log.debug("%s: %d itinerarios", ROTULOS[modo], len(voos))
-    return voos
+        if tentativa < tentativas:
+            time.sleep(random.uniform(4.0, 8.0))
+    return []
 
 
 def coleta(cfg: dict) -> Resultado:
     tem_volta = bool(cfg.get("data_volta"))
-    modos = [IDA_TOTAL, IDA_AVULSA] if not tem_volta else [
-        IDA_TOTAL,
-        VOLTA_TOTAL,
-        IDA_AVULSA,
-        VOLTA_AVULSA,
-    ]
+    modos = [IDA_TOTAL, IDA_AVULSA, VOLTA_AVULSA] if tem_volta else [IDA_TOTAL, IDA_AVULSA]
     dados: dict[str, list[Voo]] = {}
     for indice, modo in enumerate(modos):
         if indice:
@@ -552,7 +569,7 @@ def coleta(cfg: dict) -> Resultado:
 
     res = Resultado()
     res.ida = combina(dados.get(IDA_TOTAL, []), dados.get(IDA_AVULSA, []))
-    res.volta = combina(dados.get(VOLTA_TOTAL, []), dados.get(VOLTA_AVULSA, []))
+    res.volta = combina([], dados.get(VOLTA_AVULSA, []))
 
     def mais_barato(voos: list[Voo], atributo: str) -> Voo | None:
         candidatos = [v for v in voos if getattr(v, atributo) is not None]
@@ -563,7 +580,6 @@ def coleta(cfg: dict) -> Resultado:
     res.voo_ida = mais_barato(res.ida, "preco_trecho")
     res.voo_volta = mais_barato(res.volta, "preco_trecho")
     res.voo_total_ida = mais_barato(res.ida, "preco_total")
-    res.voo_total_volta = mais_barato(res.volta, "preco_total")
     return res
 
 
@@ -607,7 +623,12 @@ def verifica(cfg: dict, estado: dict, notificar: bool = True) -> Resultado:
         salva_estado(estado)
         return res
 
-    log.info("ACHOU: total de %s, abaixo de R$ %d", moeda(melhor), limite)
+    origem_preco = (
+        "total ida e volta (comprando junto)"
+        if melhor == res.menor_total
+        else "soma dos trechos comprados separados"
+    )
+    log.info("ACHOU: %s de %s, abaixo de R$ %d", origem_preco, moeda(melhor), limite)
     if notificar:
         if deve_notificar(estado, melhor, float(cfg.get("reenviar_apos_horas", 12))):
             texto = monta_mensagem(cfg, res, limite)
