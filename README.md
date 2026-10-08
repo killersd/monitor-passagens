@@ -35,7 +35,6 @@ que deseja acompanhar. Use os codigos IATA dos aeroportos, como `GRU`, `AJU` ou
   "moeda": "BRL",
   "preco_maximo": 1200,
   "intervalo_minutos": 60,
-  "reenviar_apos_horas": 12,
   "telegram_bot_token": "",
   "telegram_chat_id": ""
 }
@@ -52,7 +51,6 @@ Todos os campos de viagem e monitoramento ficam no JSON:
 | `moeda` | Moeda dos precos, por exemplo `BRL`, `USD` ou `EUR` |
 | `preco_maximo` | Limite que dispara o alerta |
 | `intervalo_minutos` | Intervalo entre consultas no modo continuo |
-| `reenviar_apos_horas` | Tempo para reenviar um alerta sem nova queda de preco |
 | `telegram_bot_token`, `telegram_chat_id` | Credenciais e destinatario das notificacoes |
 
 Os valores acima sao apenas um exemplo: altere origem, destino e os demais
@@ -123,8 +121,8 @@ Unregister-ScheduledTask -TaskName "MonitorPassagensAJU-GRU" -Confirm:$false
 - Em viagens de ida e volta, cada verificacao faz quatro consultas: a lista de
   ida e a lista de volta da pesquisa de ida e volta, que dao o total da viagem,
   e uma pesquisa de so ida para cada trecho, que da o preco separado de cada um.
-- Nao repete o mesmo aviso a cada consulta: so reenvia se o preco cair mais ainda
-  ou depois de `reenviar_apos_horas` horas.
+- Envia o alerta em toda consulta que encontrar preco abaixo de `preco_maximo`,
+  sem intervalo minimo entre avisos.
 - O historico fica em `estado.json` (`menor_preco_ida`, `menor_preco_volta`,
   `menor_total`, `melhores_ida` e `melhores_volta`) e o log em `monitor.log`.
 

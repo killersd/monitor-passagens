@@ -488,7 +488,6 @@ DEFAULT_CONFIG = {
     "moeda": "BRL",
     "preco_maximo": 1000,
     "intervalo_minutos": 60,
-    "reenviar_apos_horas": 12,
     "telegram_bot_token": "",
     "telegram_chat_id": "",
 }
@@ -522,14 +521,6 @@ def carrega_estado() -> dict:
 
 def salva_estado(estado: dict) -> None:
     STATE_PATH.write_text(json.dumps(estado, indent=2, ensure_ascii=False), encoding="utf-8")
-
-
-def deve_notificar(estado: dict, preco: int, reenviar_apos_horas: float) -> bool:
-    ultimo = estado.get("ultimo_preco_alertado")
-    if ultimo is None or preco < ultimo:
-        return True
-    quando = estado.get("ultimo_alerta_em", 0)
-    return (time.time() - quando) >= reenviar_apos_horas * 3600
 
 
 # ------------------------------------------------------------------ ciclo main
@@ -630,14 +621,11 @@ def verifica(cfg: dict, estado: dict, notificar: bool = True) -> Resultado:
     )
     log.info("ACHOU: %s de %s, abaixo de R$ %d", origem_preco, moeda(melhor), limite)
     if notificar:
-        if deve_notificar(estado, melhor, float(cfg.get("reenviar_apos_horas", 12))):
-            texto = monta_mensagem(cfg, res, limite)
-            if telegram_send(cfg["telegram_bot_token"], cfg["telegram_chat_id"], texto):
-                log.info("Alerta enviado no Telegram.")
-                estado["ultimo_preco_alertado"] = melhor
-                estado["ultimo_alerta_em"] = time.time()
-        else:
-            log.info("Alerta desse patamar de preco ja enviado; aguardando janela de reenvio.")
+        texto = monta_mensagem(cfg, res, limite)
+        if telegram_send(cfg["telegram_bot_token"], cfg["telegram_chat_id"], texto):
+            log.info("Alerta enviado no Telegram.")
+            estado["ultimo_preco_alertado"] = melhor
+            estado["ultimo_alerta_em"] = time.time()
 
     salva_estado(estado)
     return res

@@ -8,7 +8,6 @@
   "moeda": "BRL",
   "preco_maximo": 1000,
   "intervalo_minutos": 60,
-  "reenviar_apos_horas": 12,
   "telegram_bot_token": "",
   "telegram_chat_id": ""
 }
